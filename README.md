@@ -19,3 +19,10 @@ A Telegram bot for downloading YouTube playlists.
    npm run build
    npm start
    ```
+
+## Features
+
+- Downloads YouTube videos and playlists
+- Supports both video (MP4) and audio (MP3) formats
+- Automatically splits large files (>49MB) into parts for Telegram upload
+- Shows progress with video number and part info: `[1/5] Video Title (Part 1/3)`

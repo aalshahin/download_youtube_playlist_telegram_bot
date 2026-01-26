@@ -2,11 +2,14 @@ import { Downloader, type VideoMetadata } from './downloader';
 import { Context, Telegraf } from 'telegraf';
 import fs from 'fs-extra';
 import path from 'path';
+import { splitFileIfNeeded } from './utils';
 
 export interface QueueItem {
     ctx: Context;
     video: VideoMetadata;
     isAudio: boolean;
+    videoIndex: number;
+    totalVideos: number;
 }
 
 export class DownloadQueue {
@@ -40,50 +43,58 @@ export class DownloadQueue {
     }
 
     private async processItem(item: QueueItem) {
-        const { ctx, video, isAudio } = item;
+        const { ctx, video, isAudio, videoIndex, totalVideos } = item;
+        const videoLabel = `[${videoIndex}/${totalVideos}]`;
         try {
-            await ctx.reply(`Downloading: ${video.title}...`);
+            await ctx.reply(`${videoLabel} Downloading: ${video.title}...`);
             const filePath = await this.downloader.downloadVideo(video.url, video.title, isAudio);
 
             // Re-check size before upload
             const stats = await fs.stat(filePath);
             const sizeMB = stats.size / (1024 * 1024);
 
-            await ctx.reply(`Uploading: ${video.title} (${sizeMB.toFixed(2)}MB)...`);
+            // Split file if larger than 49MB
+            const { parts, wasSplit } = await splitFileIfNeeded(filePath);
 
-            if (sizeMB > 50) {
-                await ctx.reply(`File is too large for Telegram (${sizeMB.toFixed(2)}MB). Trying to send as document...`);
-                try {
-                    await ctx.replyWithDocument({ source: filePath, filename: path.basename(filePath) });
-                } catch (e) {
-                    await ctx.reply(`Failed to upload ${video.title} even as document. It might be too large.`);
-                }
+            if (wasSplit) {
+                await ctx.reply(`${videoLabel} File is ${sizeMB.toFixed(2)}MB. Splitting into ${parts.length} parts...`);
             } else {
+                await ctx.reply(`${videoLabel} Uploading: ${video.title} (${sizeMB.toFixed(2)}MB)...`);
+            }
+
+            for (let i = 0; i < parts.length; i++) {
+                const partPath = parts[i]!;
+                const partSuffix = wasSplit ? ` (Part ${i + 1}/${parts.length})` : '';
+                const partName = `${videoLabel} ${video.title}${partSuffix}`;
+
                 try {
-                    // Send as audio or video
                     if (isAudio) {
-                        await ctx.replyWithAudio({ source: filePath, filename: path.basename(filePath) }, {
-                            title: video.title
+                        await ctx.replyWithAudio({ source: partPath, filename: path.basename(partPath) }, {
+                            title: partName
                         });
                     } else {
-                        await ctx.replyWithVideo({ source: filePath, filename: path.basename(filePath) }, {
-                            caption: video.title,
+                        await ctx.replyWithVideo({ source: partPath, filename: path.basename(partPath) }, {
+                            caption: partName,
                             supports_streaming: true
                         });
                     }
                 } catch (e: any) {
                     console.error("Upload error", e);
-                    await ctx.reply(`Error uploading. Trying as document.`);
-                    await ctx.replyWithDocument({ source: filePath, filename: path.basename(filePath) });
+                    await ctx.reply(`Error uploading ${partName}. Trying as document...`);
+                    try {
+                        await ctx.replyWithDocument({ source: partPath, filename: path.basename(partPath) });
+                    } catch (docErr) {
+                        await ctx.reply(`Failed to upload ${partName}.`);
+                    }
                 }
-            }
 
-            // Cleanup
-            await fs.remove(filePath);
+                // Cleanup each part after upload
+                await fs.remove(partPath);
+            }
 
         } catch (error) {
             console.error(`Error processing ${video.title}:`, error);
-            await ctx.reply(`Failed to process ${video.title}. Skipping.`);
+            await ctx.reply(`${videoLabel} Failed to process ${video.title}. Skipping.`);
         }
     }
 }

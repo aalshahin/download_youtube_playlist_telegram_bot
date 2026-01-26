@@ -54,8 +54,8 @@ export class Downloader {
                 // Extract audio, convert to mp3, best quality
                 args.unshift('-x', '--audio-format', 'mp3', '--audio-quality', '0');
             } else {
-                // Video logic: best < 50MB
-                args.unshift('-f', 'best[ext=mp4][filesize<50M]/best[filesize<50M]/best[ext=mp4]/best');
+                // Video logic: best quality mp4
+                args.unshift('-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best', '--merge-output-format', 'mp4');
             }
 
             await execa('yt-dlp', args);
@@ -64,9 +64,7 @@ export class Downloader {
             const stats = await fs.stat(outputPath);
             const sizeMB = stats.size / (1024 * 1024);
 
-            if (sizeMB > 50) {
-                console.warn(`File ${sanitizedTitle} is ${sizeMB.toFixed(2)}MB, which is > 50MB.`);
-            }
+            console.log(`Downloaded ${sanitizedTitle}: ${sizeMB.toFixed(2)}MB`);
 
             return outputPath;
         } catch (error) {

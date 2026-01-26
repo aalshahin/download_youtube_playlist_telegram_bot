@@ -85,11 +85,13 @@ export class Bot {
 
             await ctx.reply(`Found ${videos.length} video(s). Adding to queue...`);
 
-            videos.forEach((video: VideoMetadata) => {
+            videos.forEach((video: VideoMetadata, index: number) => {
                 const item: QueueItem = {
                     ctx,
                     video,
-                    isAudio
+                    isAudio,
+                    videoIndex: index + 1,
+                    totalVideos: videos.length
                 };
                 this.downloadQueue.add(item);
             });
